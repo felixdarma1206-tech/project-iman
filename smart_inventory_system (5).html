@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Inventory System - Warung Rika (E-SCM)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: linear-gradient(135deg, #f0fdf4 0%, #e6f4ea 100%); 
+        }
+        .phone-frame { 
+            width: 375px; 
+            min-width: 375px;
+            max-width: 375px;
+            height: 812px; 
+            background: #fcfdfc; 
+            border-radius: 40px; 
+            overflow: hidden; 
+            border: 10px solid #1e293b; 
+            position: relative; 
+            margin: 20px auto; 
+            box-shadow: 0 25px 50px -12px rgba(5, 150, 105, 0.25); 
+            flex-shrink: 0;
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .interactive-tab {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4 overflow-x-hidden">
+
+    <div x-data="{ 
+        tab: 'dashboard',
+        showToast: false,
+        toastMessage: '',
+        showConfirmModal: false,
+        selectedRestockProduct: 'Susu Ultra Milk 1L',
+        selectedForecastingProduct: 'Susu Ultra Milk 1L',
+        selectedDashboardProduct: 'Susu Ultra Milk 1L',
+        
+        // Single Source of Truth - Konsisten & Presisi sesuai Guideline Akademis Terbaru
+        products: {
+            'Susu Ultra Milk 1L': {
+                name: 'Susu Ultra Milk 1L',
+                stock: 8,
+                recommendedRestock: 22, // Formulasi Presisi: (Prediksi 18 + Safety 12) - Aktif 8 = 22
+                unit: 'Unit',
+                criticalThreshold: 10,
+                avgSales: 16,
+                aiPred: 18,
+                safetyStock: 12,
+                confidence: '94.2% (Tinggi)',
+                daysRemaining: 2,
+                emoji: '🥛',
+                priority: 'TINGGI',
+                trend: 'Meningkat (Susu sering habis/diborong)',
+                sales: [
+                    { day: 'Sen', qty: 12, pct: '54.5%' },
+                    { day: 'Sel', qty: 14, pct: '63.6%' },
+                    { day: 'Rab', qty: 11, pct: '50.0%' },
+                    { day: 'Kam', qty: 15, pct: '68.2%' },
+                    { day: 'Jum', qty: 18, pct: '81.8%' },
+                    { day: 'Sab', qty: 22, pct: '100.0%' },
+                    { day: 'Min', qty: 20, pct: '90.9%' }
+                ]
+            },
+            'Roti Tawar': {
+                name: 'Roti Tawar',
+                stock: 14,
+                recommendedRestock: 20, // Formulasi Presisi: (Prediksi 25 + Safety 9) - Aktif 14 = 20
+                unit: 'Pack',
+                criticalThreshold: 15,
+                avgSales: 23,
+                aiPred: 25,
+                safetyStock: 9,
+                confidence: '88.5% (Sedang)',
+                daysRemaining: 4,
+                emoji: '🍞',
+                priority: 'SEDANG',
+                trend: 'Meningkat (Stok harian stabil)',
+                sales: [
+                    { day: 'Sen', qty: 18, pct: '56.2%' },
+                    { day: 'Sel', qty: 20, pct: '62.5%' },
+                    { day: 'Rab', qty: 16, pct: '50.0%' },
+                    { day: 'Kam', qty: 22, pct: '68.7%' },
+                    { day: 'Jum', qty: 25, pct: '78.1%' },
+                    { day: 'Sab', qty: 32, pct: '100.0%' },
+                    { day: 'Min', qty: 28, pct: '87.5%' }
+                ]
+            },
+            'Telur Ayam': {
+                name: 'Telur Ayam',
+                stock: 45,
+                recommendedRestock: 25, // Formulasi Presisi: (Prediksi 38 + Safety 32) - Aktif 45 = 25
+                unit: 'Kg',
+                criticalThreshold: 20,
+                avgSales: 36,
+                aiPred: 38,
+                safetyStock: 32,
+                confidence: '96.8% (Sangat Tinggi)',
+                daysRemaining: 8,
+                emoji: '🥚',
+                priority: 'RENDAH',
+                trend: 'Stabil',
+                sales: [
+                    { day: 'Sen', qty: 30, pct: '66.6%' },
+                    { day: 'Sel', qty: 28, pct: '62.2%' },
+                    { day: 'Rab', qty: 35, pct: '77.7%' },
+                    { day: 'Kam', qty: 32, pct: '71.1%' },
+                    { day: 'Jum', qty: 40, pct: '88.8%' },
+                    { day: 'Sab', qty: 45, pct: '100.0%' },
+                    { day: 'Min', qty: 42, pct: '93.3%' }
+                ]
+            }
+        },
+
+        getCriticalCount() {
+            let count = 0;
+            for (let k in this.products) {
+                if (this.products[k].stock <= this.products[k].criticalThreshold) {
+                    count++;
+                }
+            }
+            return count;
+        },
+
+        getSalesTotal(prodKey) {
+            return this.products[prodKey].sales.reduce((sum, item) => sum + item.qty, 0);
+        },
+
+        getSortedProducts() {
+            return Object.keys(this.products)
+                .map(key => {
+                    let prod = this.products[key];
+                    return {
+                        name: prod.name,
+                        total: this.getSalesTotal(key),
+                        unit: prod.unit,
+                        emoji: prod.emoji,
+                        isKeyStudy: key === 'Susu Ultra Milk 1L'
+                    };
+                })
+                .sort((a, b) => b.total - a.total);
+        },
+
+        // Metode pemetaan koordinat yang presisi dan bebas dari risiko overflow
+        getPoints(prodKey) {
+            let prod = this.products[prodKey];
+            if (!prod) return [];
+            let salesVals = prod.sales.map(s => s.qty);
+            let allVals = [...salesVals, prod.aiPred];
+            let maxVal = Math.max(...allVals) || 1;
+            
+            // Lebar Grafik: Sumbu X dibatasi dari 35 s.d 255 agar tidak menabrak pinggiran
+            // Tinggi Grafik: Sumbu Y dibatasi dari 35 s.d 90 dalam viewBox h-120
+            return allVals.map((val, idx) => {
+                let x = 35 + (idx * (220 / 7));
+                let y = 90 - ((val / maxVal) * 55);
+                let day = idx < 7 ? prod.sales[idx].day : 'Besok';
+                return { x, y, val, day };
+            });
+        },
+        
+        getLinePath(points, isPredOnly) {
+            if (!points || points.length === 0) return '';
+            if (isPredOnly) {
+                let p1 = points[6];
+                let p2 = points[7];
+                return `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
+            } else {
+                let path = `M ${points[0].x} ${points[0].y}`;
+                for (let i = 1; i <= 6; i++) {
+                    path += ` L ${points[i].x} ${points[i].y}`;
+                }
+                return path;
+            }
+        },
+        
+        getAreaPath(points) {
+            if (!points || points.length === 0) return '';
+            let path = `M ${points[0].x} 90`;
+            for (let i = 0; i <= 6; i++) {
+                path += ` L ${points[i].x} ${points[i].y}`;
+            }
+            path += ` L ${points[6].x} 90 Z`;
+            return path;
+        },
+
+        playNotificationSound() {
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let osc = ctx.createOscillator();
+                let gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sine';
+                
+                const now = ctx.currentTime;
+                osc.frequency.setValueAtTime(587.33, now); 
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.1, now + 0.05);
+                
+                osc.frequency.setValueAtTime(880.00, now + 0.12); 
+                gain.gain.setValueAtTime(0.1, now + 0.12);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+                
+                osc.start(now);
+                osc.stop(now + 0.55);
+            } catch(e) {
+                console.log('Audio feedback bypassed');
+            }
+        },
+
+        executeRestock() {
+            let prod = this.products[this.selectedRestockProduct];
+            const added = prod.recommendedRestock;
+            prod.stock += added;
+            
+            this.showConfirmModal = false;
+            this.toastMessage = `Berhasil menambah +${added} ${prod.unit} untuk ${prod.name}!`;
+            this.showToast = true;
+            
+            this.playNotificationSound();
+            
+            setTimeout(() => {
+                lucide.createIcons();
+            }, 100);
+            
+            setTimeout(() => {
+                this.showToast = false;
+            }, 4000);
+        }
+    }" class="phone-frame flex flex-col shadow-2xl relative">
+
+        <!-- Notification Toast -->
+        <div x-show="showToast" 
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0 -translate-y-4"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             x-transition:leave="transition ease-in duration-200"
+             x-transition:leave-start="opacity-100 translate-y-0"
+             x-transition:leave-end="opacity-0 -translate-y-4"
+             class="absolute top-4 left-4 right-4 bg-emerald-900 text-white p-3.5 rounded-2xl shadow-xl z-50 flex items-center gap-3 border border-emerald-500">
+            <div class="bg-emerald-50 p-2 rounded-xl shrink-0">
+                <i data-lucide="check" class="w-4 h-4 text-emerald-600"></i>
+            </div>
+            <div class="flex-1">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Restock Sukses</p>
+                <p class="text-[11px] leading-snug" x-text="toastMessage"></p>
+            </div>
+            <button @click="showToast = false" class="text-white hover:opacity-75">
+                <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+        </div>
+
+        <!-- Confirm Restock Modal -->
+        <div x-show="showConfirmModal" class="absolute inset-0 bg-slate-900/70 z-50 flex items-center justify-center p-5" x-transition>
+            <div class="bg-white rounded-3xl p-5 w-full space-y-4 shadow-2xl border border-slate-100" @click.away="showConfirmModal = false">
+                <div class="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto text-emerald-600">
+                    <i data-lucide="package-plus" class="w-6 h-6"></i>
+                </div>
+                <div class="text-center">
+                    <h3 class="font-bold text-slate-800 text-base">Konfirmasi Validasi E-SCM</h3>
+                    <p class="text-[11px] text-slate-500 mt-1">
+                        Apakah Anda menyetujui rekomendasi pengadaan AI berikut untuk diperbarui pada inventori?
+                    </p>
+                </div>
+                <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-100 space-y-2 text-xs">
+                    <div class="flex justify-between"><span class="text-slate-500">Item Produk:</span><span class="font-bold text-slate-800" x-text="products[selectedRestockProduct].name"></span></div>
+                    <div class="flex justify-between"><span class="text-slate-500">Formulasi Pengadaan:</span><span class="font-semibold text-slate-700" x-text="products[selectedRestockProduct].aiPred + ' (Prediksi) + ' + products[selectedRestockProduct].safetyStock + ' (Safety) - ' + products[selectedRestockProduct].stock + ' (Stok)'"></span></div>
+                    <div class="flex justify-between border-t border-dashed border-slate-200 pt-1.5"><span class="text-slate-800 font-medium">Rekomendasi Final:</span><span class="font-black text-emerald-600 text-sm" x-text="'+' + products[selectedRestockProduct].recommendedRestock + ' ' + products[selectedRestockProduct].unit"></span></div>
+                </div>
+                <div class="grid grid-cols-2 gap-3 pt-1">
+                    <button @click="showConfirmModal = false" class="py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-xs hover:bg-slate-50">
+                        Batal
+                    </button>
+                    <button @click="executeRestock()" class="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-md shadow-emerald-600/20">
+                        Setujui Restock
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- App Header -->
+        <header class="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-5 pt-8 pb-5 rounded-b-[2.5rem] shadow-md z-10">
+            <div class="flex justify-between items-center">
+                <div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-300"></span>
+                        <h1 class="text-[10px] font-bold opacity-90 uppercase tracking-widest">UMKM Warung Rika</h1>
+                    </div>
+                    <h2 class="text-lg font-bold tracking-tight mt-0.5">Smart Inventory System</h2>
+                    <p class="text-[9px] opacity-75 mt-0.5">E-SCM Decision Support Prototype</p>
+                </div>
+                <div class="relative cursor-pointer bg-white/10 p-2 rounded-xl hover:bg-white/15" @click="toastMessage = 'Sistem memantau 3 produk utama secara real-time'; showToast = true">
+                    <i data-lucide="bell" class="w-5 h-5 text-white"></i>
+                    <span x-show="getCriticalCount() > 0" class="absolute -top-1 -right-1 bg-amber-500 w-4 h-4 rounded-full border-2 border-emerald-600 flex items-center justify-center text-[8px] text-white font-black" x-text="getCriticalCount()"></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Scrollable Container -->
+        <main class="flex-1 overflow-y-auto hide-scrollbar p-5 space-y-6">
+            
+            <!-- SCREEN 1 — Dashboard Utama -->
+            <section x-show="tab === 'dashboard'" x-transition class="space-y-6">
+                <!-- KPI Grid -->
+                <div class="grid grid-cols-3 gap-2">
+                    <div class="bg-emerald-50/70 p-3 rounded-2xl border border-emerald-100 text-center shadow-sm">
+                        <p class="text-[8px] text-emerald-800 uppercase font-black tracking-wider">Dipantau</p>
+                        <p class="text-lg font-black text-emerald-900">3</p>
+                    </div>
+                    <div class="p-3 rounded-2xl text-center shadow-sm transition-all"
+                         :class="getCriticalCount() > 0 ? 'bg-red-50/70 border border-red-100' : 'bg-slate-50 border border-slate-100'">
+                        <p class="text-[8px] uppercase font-black tracking-wider" :class="getCriticalCount() > 0 ? 'text-red-800' : 'text-slate-500'">Stok Kritis</p>
+                        <p class="text-lg font-black" :class="getCriticalCount() > 0 ? 'text-red-600' : 'text-slate-600'" x-text="getCriticalCount()"></p>
+                    </div>
+                    <div class="p-3 rounded-2xl text-center shadow-sm transition-all"
+                         :class="getCriticalCount() > 0 ? 'bg-amber-50/70 border border-amber-100' : 'bg-slate-50 border border-slate-100'">
+                        <p class="text-[8px] uppercase font-black tracking-wider" :class="getCriticalCount() > 0 ? 'text-amber-800' : 'text-slate-500'">Rekomendasi</p>
+                        <p class="text-lg font-black" :class="getCriticalCount() > 0 ? 'text-amber-600' : 'text-slate-600'" x-text="getCriticalCount()"></p>
+                    </div>
+                </div>
+
+                <!-- Alert Section -->
+                <div>
+                    <h3 class="font-bold text-slate-800 text-xs uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                        Peringatan Stok Kritis
+                    </h3>
+                    <div class="space-y-3">
+                        <!-- Susu Alert Card -->
+                        <div class="border p-4 rounded-2xl shadow-sm transition-all duration-300"
+                             :class="products['Susu Ultra Milk 1L'].stock <= products['Susu Ultra Milk 1L'].criticalThreshold ? 'border-red-100 bg-red-50/20' : 'border-slate-100 bg-white opacity-85'">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center text-base">🥛</div>
+                                    <div>
+                                        <p class="font-bold text-xs text-slate-800">Ultra Milk 1L</p>
+                                        <p class="text-[10px] text-slate-500" x-text="'Stok: ' + products['Susu Ultra Milk 1L'].stock + ' ' + products['Susu Ultra Milk 1L'].unit"></p>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <template x-if="products['Susu Ultra Milk 1L'].stock <= products['Susu Ultra Milk 1L'].criticalThreshold">
+                                        <span class="bg-red-100 text-red-700 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">KRITIS</span>
+                                    </template>
+                                    <template x-if="products['Susu Ultra Milk 1L'].stock > products['Susu Ultra Milk 1L'].criticalThreshold">
+                                        <span class="bg-emerald-100 text-emerald-700 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">AMAN</span>
+                                    </template>
+                                    <p class="text-[9px] text-slate-400 mt-1" x-text="products['Susu Ultra Milk 1L'].stock <= products['Susu Ultra Milk 1L'].criticalThreshold ? 'Est. habis 2 hari' : 'Stok terpenuhi'"></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Roti Alert Card -->
+                        <div class="border p-4 rounded-2xl shadow-sm transition-all duration-300"
+                             :class="products['Roti Tawar'].stock <= products['Roti Tawar'].criticalThreshold ? 'border-red-100 bg-red-50/20' : 'border-slate-100 bg-white opacity-85'">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center text-base">🍞</div>
+                                    <div>
+                                        <p class="font-bold text-xs text-slate-800">Roti Tawar</p>
+                                        <p class="text-[10px] text-slate-500" x-text="'Stok: ' + products['Roti Tawar'].stock + ' ' + products['Roti Tawar'].unit"></p>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <template x-if="products['Roti Tawar'].stock <= products['Roti Tawar'].criticalThreshold">
+                                        <span class="bg-red-100 text-red-700 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">KRITIS</span>
+                                    </template>
+                                    <template x-if="products['Roti Tawar'].stock > products['Roti Tawar'].criticalThreshold">
+                                        <span class="bg-emerald-100 text-emerald-700 text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">AMAN</span>
+                                    </template>
+                                    <p class="text-[9px] text-slate-400 mt-1" x-text="products['Roti Tawar'].stock <= products['Roti Tawar'].criticalThreshold ? 'Est. habis 4 hari' : 'Stok terpenuhi'"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dynamic Dashboard Chart Card -->
+                <div class="bg-white p-4 border border-slate-100 rounded-3xl shadow-sm">
+                    <div class="flex justify-between items-center mb-4">
+                        <div>
+                            <h4 class="font-bold text-slate-800 text-xs uppercase tracking-wider">Grafik Penjualan Mingguan</h4>
+                            <p class="text-[9px] text-slate-400">Gunakan untuk memantau fluktuasi harian</p>
+                        </div>
+                        <select x-model="selectedDashboardProduct" class="text-[10px] bg-emerald-50 text-emerald-800 font-bold px-2 py-1.5 rounded-xl border border-emerald-100 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer">
+                            <option value="Susu Ultra Milk 1L">🥛 Susu</option>
+                            <option value="Roti Tawar">🍞 Roti</option>
+                            <option value="Telur Ayam">🥚 Telur</option>
+                        </select>
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <div class="relative flex items-end justify-between px-1 pt-6 pb-2 border-b border-slate-100 h-28">
+                            <!-- Horizontal Guide lines -->
+                            <div class="absolute inset-x-0 bottom-1/4 border-t border-dashed border-slate-100"></div>
+                            <div class="absolute inset-x-0 bottom-2/4 border-t border-dashed border-slate-100"></div>
+                            <div class="absolute inset-x-0 bottom-3/4 border-t border-dashed border-slate-100"></div>
+                            
+                            <template x-for="item in products[selectedDashboardProduct].sales" :key="item.day">
+                                <div class="flex flex-col items-center flex-1 z-10">
+                                    <span class="text-[9px] font-bold text-emerald-700 mb-1" x-text="item.qty"></span>
+                                    <div class="h-16 w-full flex items-end justify-center">
+                                        <div class="w-5 bg-gradient-to-t from-emerald-400 to-emerald-500 rounded-t shadow-sm transition-all duration-300" 
+                                             :style="'height: ' + item.pct"></div>
+                                    </div>
+                                    <span class="text-[9px] text-slate-400 mt-1.5 font-medium" x-text="item.day"></span>
+                                </div>
+                            </template>
+                        </div>
+                        <div class="flex justify-between items-center text-[9px] text-slate-400 pt-1">
+                            <span>* Total Penjualan 7 Hari:</span>
+                            <span class="font-bold text-emerald-700" x-text="getSalesTotal(selectedDashboardProduct) + ' ' + products[selectedDashboardProduct].unit"></span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SCREEN 2 — AI Demand Forecasting -->
+            <section x-show="tab === 'forecasting'" x-transition class="space-y-5">
+                <div class="space-y-1.5">
+                    <label class="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Pilih Produk Analisis</label>
+                    <div class="relative">
+                        <select x-model="selectedForecastingProduct" class="w-full p-3 border border-slate-200 rounded-2xl bg-white font-semibold text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 appearance-none cursor-pointer">
+                            <option value="Susu Ultra Milk 1L">🥛 Susu Ultra Milk 1L</option>
+                            <option value="Roti Tawar">🍞 Roti Tawar</option>
+                            <option value="Telur Ayam">🥚 Telur Ayam</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-600">
+                            <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Forecast Highlight Card -->
+                <div class="bg-gradient-to-br from-emerald-600 to-teal-700 text-white p-5 rounded-3xl shadow-md relative overflow-hidden">
+                    <div class="absolute -right-6 -bottom-6 opacity-10">
+                        <i data-lucide="brain-circuit" class="w-28 h-28"></i>
+                    </div>
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-[9px] font-bold tracking-wider uppercase opacity-90">Hasil Proyeksi Permintaan AI</p>
+                            <h4 class="text-xl font-black mt-1" x-text="'Besok: ' + products[selectedForecastingProduct].aiPred + ' ' + products[selectedForecastingProduct].unit"></h4>
+                        </div>
+                        <div class="bg-white/20 backdrop-blur-md px-2 py-0.5 rounded-full text-[8px] font-bold flex items-center gap-1">
+                            <span class="w-1 h-1 rounded-full bg-emerald-300 animate-ping"></span>
+                            Calculated
+                        </div>
+                    </div>
+                    
+                    <div class="mt-4 pt-4 border-t border-white/20 grid grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-[9px] opacity-80 uppercase tracking-wide">Rata-Rata Historis</p>
+                            <p class="font-bold text-xs" x-text="products[selectedForecastingProduct].avgSales + ' ' + products[selectedForecastingProduct].unit + '/Hari'"></p>
+                        </div>
+                        <div>
+                            <p class="text-[9px] opacity-80 uppercase tracking-wide">Tren Permintaan</p>
+                            <p class="font-bold text-xs" x-text="products[selectedForecastingProduct].trend.split(' (')[0]"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Academic Simple Explanation Block -->
+                <div class="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-100/50 space-y-1">
+                    <p class="text-[10px] font-bold text-emerald-800 flex items-center gap-1">
+                        <i data-lucide="info" class="w-3.5 h-3.5"></i>
+                        Logika Dasar Prediksi AI:
+                    </p>
+                    <p class="text-[10px] text-emerald-900 leading-relaxed">
+                        Prediksi didasarkan pada analisis histori penjualan mingguan, pergeseran rata-rata bergerak (moving average), dan tren peningkatan permintaan di lapangan (misal: pengaruh musim ramai mahasiswa sekitar Unila).
+                    </p>
+                </div>
+
+                <!-- Real-time SVG Trend Line Graphic (Diformulasikan Kokoh & Bebas Bug Parser Browser) -->
+                <div class="bg-white p-4 border border-slate-100 rounded-3xl shadow-sm space-y-2">
+                    <h5 class="font-bold text-slate-800 text-xs">Visualisasi Kurva & Garis Tren</h5>
+                    <div class="h-36 relative w-full overflow-hidden" x-data="{ pts: [] }" x-effect="pts = getPoints(selectedForecastingProduct)">
+                        <svg class="w-full h-full" viewBox="0 0 300 120">
+                            <!-- Background Grid Lines -->
+                            <line x1="35" y1="35" x2="255" y2="35" stroke="#f8fafc" stroke-width="1.5" />
+                            <line x1="35" y1="62.5" x2="255" y2="62.5" stroke="#f1f5f9" stroke-width="1" stroke-dasharray="3 3" />
+                            <line x1="35" y1="90" x2="255" y2="90" stroke="#e2e8f0" stroke-width="1.5" />
+                            
+                            <!-- Dynamic Gradient Area under Solid Line -->
+                            <path :d="getAreaPath(pts)" fill="url(#chartGrad)" opacity="0.12" />
+                            
+                            <!-- Historical Solid Line (Days 1 to 7) -->
+                            <path :d="getLinePath(pts, false)" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+                            
+                            <!-- Projection Dashed Line (Day 7 to Day 8 Forecast) -->
+                            <path :d="getLinePath(pts, true)" fill="none" stroke="#f59e0b" stroke-width="3" stroke-dasharray="4 4" stroke-linecap="round" />
+                            
+                            <!-- Interactive / Reactive Nodes and Labels (Statically bound to avoid SVG parser loop issues) -->
+                            <!-- Day 1 -->
+                            <g x-show="pts[0]">
+                                <circle :cx="pts[0]?.x" :cy="pts[0]?.y" r="3.5" fill="#10b981" stroke="#fff" stroke-width="1.5" />
+                                <text :x="pts[0]?.x" :y="pts[0]?.y - 8" text-anchor="middle" class="text-[8px] font-black fill-emerald-800" x-text="pts[0]?.val"></text>
+                                <text :x="pts[0]?.x" y="105" text-anchor="middle" class="text-[8px] font-bold fill-slate-400" x-text="pts[0]?.day"></text>
+                            </g>
+                            <!-- Day 2 -->
+                            <g x-show="pts[1]">
+                                <circle :cx="pts[1]?.x" :cy="pts[1]?.y" r="3.5" fill="#10b981" stroke="#fff" stroke-width="1.5" />
+                                <text :x="pts[1]?.x" :y="pts[1]?.y - 8" text-anchor="middle" class="text-[8px] font-black fill-emerald-800" x-text="pts[1]?.val"></text>
+                                <text :x="pts[1]?.x" y="105" text-anchor="middle" class="text-[8px] font-bold fill-slate-400" x-text="pts[1]?.day"></text>
+                            </g>
+                            <!-- Day 3 -->
+                            <g x-show="pts[2]">
+                                <circle :cx="pts[2]?.x" :cy="pts[2]?.y" r="3.5" fill="#10b981" stroke="#fff" stroke-width="1.5" />
+                                <text :x="pts[2]?.x" :y="pts[2]?.y - 8" text-anchor="middle" class="text-[8px] font-black fill-emerald-800" x-text="pts[2]?.val"></text>
+                                <text :x="pts[2]?.x" y="105" text-anchor="middle" class="text-[8px] font-bold fill-slate-400" x-text="pts[2]?.day"></text>
+                            </g>
+                            <!-- Day 4 -->
+                            <g x-show="pts[3]">
+                                <circle :cx="pts[3]?.x" :cy="pts[3]?.y" r="3.5" fill="#10b981" stroke="#fff" stroke-width="1.5" />
+                                <text :x="pts[3]?.x" :y="pts[3]?.y - 8" text-anchor="middle" class="text-[8px] font-black fill-emerald-800" x-text="pts[3]?.val"></text>
+                                <text :x="pts[3]?.x" y="105" text-anchor="middle" class="text-[8px] font-bold fill-slate-400" x-text="pts[3]?.day"></text>
+                            </g>
+                            <!-- Day 5 -->
+                            <g x-show="pts[4]">
+                                <circle :cx="pts[4]?.x" :cy="pts[4]?.y" r="3.5" fill="#10b981" stroke="#fff" stroke-width="1.5" />
+                                <text :x="pts[4]?.x" :y="pts[4]?.y - 8" text-anchor="middle" class="text-[8px] font-black fill-emerald-800" x-text="pts[4]?.val"></text>
+                                <text :x="pts[4]?.x" y="105" text-anchor="middle" class="text-[8px] font-bold fill-slate-400" x-text="pts[4]?.day"></text>
+                            </g>
+                            <!-- Day 6 -->
+                            <g x-show="pts[5]">
+                                <circle :cx="pts[5]?.x" :cy="pts[5]?.y" r="3.5" fill="#10b981" stroke="#fff" stroke-width="1.5" />
+                                <text :x="pts[5]?.x" :y="pts[5]?.y - 8" text-anchor="middle" class="text-[8px] font-black fill-emerald-800" x-text="pts[5]?.val"></text>
+                                <text :x="pts[5]?.x" y="105" text-anchor="middle" class="text-[8px] font-bold fill-slate-400" x-text="pts[5]?.day"></text>
+                            </g>
+                            <!-- Day 7 -->
+                            <g x-show="pts[6]">
+                                <circle :cx="pts[6]?.x" :cy="pts[6]?.y" r="3.5" fill="#10b981" stroke="#fff" stroke-width="1.5" />
+                                <text :x="pts[6]?.x" :y="pts[6]?.y - 8" text-anchor="middle" class="text-[8px] font-black fill-emerald-800" x-text="pts[6]?.val"></text>
+                                <text :x="pts[6]?.x" y="105" text-anchor="middle" class="text-[8px] font-bold fill-slate-400" x-text="pts[6]?.day"></text>
+                            </g>
+                            <!-- Day 8 (Besok - Proyeksi) -->
+                            <g x-show="pts[7]">
+                                <circle :cx="pts[7]?.x" :cy="pts[7]?.y" r="8" fill="#f59e0b" opacity="0.35" class="animate-ping" />
+                                <circle :cx="pts[7]?.x" :cy="pts[7]?.y" r="5" fill="#f59e0b" stroke="#fff" stroke-width="1.5" />
+                                <text :x="pts[7]?.x" :y="pts[7]?.y - 8" text-anchor="middle" class="text-[8px] font-black fill-amber-600" x-text="pts[7]?.val"></text>
+                                <text :x="pts[7]?.x" y="105" text-anchor="middle" class="text-[8px] font-bold fill-slate-400" x-text="pts[7]?.day"></text>
+                                
+                                <!-- Floating Tooltip -->
+                                <rect :x="pts[7]?.x - 38" :y="pts[7]?.y - 32" width="76" height="15" rx="4" fill="#fef3c7" stroke="#f59e0b" stroke-width="1" />
+                                <text :x="pts[7]?.x" :y="pts[7]?.y - 22" text-anchor="middle" class="text-[7px] font-black fill-amber-800">PROYEKSI BESOK</text>
+                                <line :x1="pts[7]?.x" :y1="pts[7]?.y - 17" :x2="pts[7]?.x" :y2="pts[7]?.y - 6" stroke="#f59e0b" stroke-width="1" stroke-dasharray="1 1" />
+                            </g>
+
+                            <!-- Y-Axis Labels to show real quantitative bounds -->
+                            <text x="14" y="38" class="text-[8px] font-bold fill-slate-400 text-right" x-text="Math.max(...pts.map(p => p.val))"></text>
+                            <text x="14" y="65.5" class="text-[8px] font-bold fill-slate-400 text-right" x-text="Math.round(Math.max(...pts.map(p => p.val)) / 2)"></text>
+                            <text x="14" y="93" class="text-[8px] font-bold fill-slate-400 text-right">0</text>
+                            
+                            <!-- Gradients -->
+                            <defs>
+                                <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="#10b981" />
+                                    <stop offset="100%" stop-color="#10b981" stop-opacity="0" />
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SCREEN 3 — AI Restock Recommendation -->
+            <section x-show="tab === 'restock'" x-transition class="space-y-6">
+                <div class="space-y-1.5">
+                    <label class="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Pilih Produk Pengadaan</label>
+                    <div class="relative">
+                        <select x-model="selectedRestockProduct" class="w-full p-3 border border-slate-200 rounded-2xl bg-white font-semibold text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 appearance-none cursor-pointer">
+                            <option value="Susu Ultra Milk 1L">🥛 Susu Ultra Milk 1L</option>
+                            <option value="Roti Tawar">🍞 Roti Tawar</option>
+                            <option value="Telur Ayam">🥚 Telur Ayam</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-600">
+                            <i data-lucide="chevron-down" class="w-4 h-4"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Product Status & Safety Stock Calculations Card -->
+                <div class="bg-white p-4 rounded-3xl border border-slate-100 shadow-sm space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-xl shadow-sm" x-text="products[selectedRestockProduct].emoji"></div>
+                        <div class="flex-1">
+                            <h3 class="font-bold text-slate-800 text-xs" x-text="products[selectedRestockProduct].name"></h3>
+                            <div class="flex items-center gap-1.5 mt-0.5">
+                                <span class="text-[10px] text-slate-400">Status Stok Saat Ini:</span>
+                                <span class="text-[10px] font-black" :class="products[selectedRestockProduct].stock <= products[selectedRestockProduct].criticalThreshold ? 'text-red-600' : 'text-emerald-600'" x-text="products[selectedRestockProduct].stock + ' ' + products[selectedRestockProduct].unit"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Formula breakdown block -->
+                    <div class="bg-slate-50 p-3 rounded-2xl border border-slate-100 space-y-2">
+                        <p class="text-[9px] font-black text-slate-500 uppercase tracking-wider">Formula Pemesanan Logis E-SCM:</p>
+                        
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                            <div class="bg-white p-2 rounded-xl border border-slate-100 text-center">
+                                <p class="text-[8px] text-slate-400 font-bold uppercase">Prediksi Kebutuhan</p>
+                                <p class="font-black text-slate-700 text-[11px] mt-0.5" x-text="products[selectedRestockProduct].aiPred + ' ' + products[selectedRestockProduct].unit"></p>
+                            </div>
+                            <div class="bg-white p-2 rounded-xl border border-slate-100 text-center">
+                                <p class="text-[8px] text-slate-400 font-bold uppercase">Safety Stock (Cadangan)</p>
+                                <p class="font-black text-emerald-700 text-[11px] mt-0.5" x-text="products[selectedRestockProduct].safetyStock + ' ' + products[selectedRestockProduct].unit"></p>
+                            </div>
+                        </div>
+
+                        <!-- Mathematical equation -->
+                        <div class="text-[9px] text-slate-500 text-center pt-1 border-t border-slate-200/50">
+                            (<span x-text="products[selectedRestockProduct].aiPred"></span> Prediksi + <span x-text="products[selectedRestockProduct].safetyStock"></span> Safety) - <span x-text="products[selectedRestockProduct].stock"></span> Stok Aktif
+                        </div>
+                    </div>
+
+                    <!-- Recommended Order Target -->
+                    <div class="bg-emerald-50/50 p-3.5 rounded-2xl border border-emerald-100 text-center">
+                        <p class="text-[9px] text-emerald-800 font-bold uppercase tracking-wider">Rekomendasi Pemesanan AI</p>
+                        <p class="text-xl font-black text-emerald-600 mt-1" x-text="'+' + products[selectedRestockProduct].recommendedRestock + ' ' + products[selectedRestockProduct].unit"></p>
+                    </div>
+
+                    <p class="text-[8px] text-slate-400 text-center italic">
+                        * Rekomendasi dihitung berdasarkan prediksi kebutuhan dan safety stock (Buffer E-SCM).
+                    </p>
+                </div>
+
+                <!-- Action button -->
+                <button @click="showConfirmModal = true" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-2xl shadow-md transition-all duration-300 flex items-center justify-center gap-2 text-xs">
+                    <i data-lucide="zap" class="w-4 h-4"></i>
+                    Validasi & Kirim Order AI
+                </button>
+
+                <!-- SCM Matrix Prioritization -->
+                <div>
+                    <h4 class="font-bold text-slate-800 text-[10px] uppercase tracking-wider mb-2.5">Matriks Urgensi Pengadaan</h4>
+                    <div class="space-y-2">
+                        <template x-for="[key, prod] in Object.entries(products)">
+                            <div @click="selectedRestockProduct = key" class="flex justify-between items-center p-3 border rounded-2xl bg-white shadow-sm cursor-pointer transition-all" :class="selectedRestockProduct === key ? 'border-emerald-500 ring-1 ring-emerald-500 bg-emerald-50/10' : 'border-slate-100'">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm" x-text="prod.emoji"></span>
+                                    <span class="text-xs font-semibold text-slate-700" x-text="prod.name"></span>
+                                </div>
+                                <span class="text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider"
+                                      :class="{
+                                          'bg-red-100 text-red-700': prod.priority === 'TINGGI',
+                                          'bg-amber-100 text-amber-700': prod.priority === 'SEDANG',
+                                          'bg-emerald-100 text-emerald-700': prod.priority === 'RENDAH'
+                                      }" x-text="prod.priority"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SCREEN 4 — Business Impact -->
+            <section x-show="tab === 'impact'" x-transition class="space-y-6">
+                <!-- Blue Card Layout — Clean responsive padding with no overflow -->
+                <div class="bg-slate-900 text-white p-5 rounded-3xl space-y-4 shadow-md w-full box-border">
+                    <h3 class="font-bold text-xs flex items-center gap-1.5 text-emerald-400">
+                        <i data-lucide="trending-up" class="w-4 h-4"></i>
+                        Simulasi Potensi Dampak (Model E-SCM)
+                    </h3>
+                    <p class="text-[10px] text-slate-300 leading-relaxed">
+                        Analisis komparatif di bawah merinci visualisasi efektivitas sebelum dan sesudah penerapan Decision Support System AI pada alur kerja Warung Rika:
+                    </p>
+                    
+                    <!-- Comparative Matrix — Fluid flex wrapper ensuring no layout spill -->
+                    <div class="grid grid-cols-2 gap-3 text-xs border-t border-slate-800 pt-4 w-full">
+                        <div class="space-y-2 pr-1.5">
+                            <p class="text-[8px] font-black uppercase tracking-wider text-red-400 flex items-center gap-1">
+                                <span class="w-1.5 h-1.5 bg-red-400 rounded-full"></span>Sebelum AI
+                            </p>
+                            <div class="space-y-1.5 text-[9px] text-slate-300">
+                                <div class="flex items-start gap-1">
+                                    <span class="text-red-400 mt-0.5">•</span>
+                                    <span class="leading-tight">Kehabisan stok susu harian</span>
+                                </div>
+                                <div class="flex items-start gap-1">
+                                    <span class="text-red-400 mt-0.5">•</span>
+                                    <span class="leading-tight">Restock intuisi sepihak</span>
+                                </div>
+                                <div class="flex items-start gap-1">
+                                    <span class="text-red-400 mt-0.5">•</span>
+                                    <span class="leading-tight">Data transaksi tidak terpakai</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="space-y-2 pl-1.5 border-l border-slate-800">
+                            <p class="text-[8px] font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1">
+                                <span class="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>Sesudah AI
+                            </p>
+                            <div class="space-y-1.5 text-[9px] text-slate-300">
+                                <div class="flex items-start gap-1">
+                                    <span class="text-emerald-400 mt-0.5">•</span>
+                                    <span class="leading-tight">Stok terpantau real-time</span>
+                                </div>
+                                <div class="flex items-start gap-1">
+                                    <span class="text-emerald-400 mt-0.5">•</span>
+                                    <span class="leading-tight">Rekomendasi safety stock</span>
+                                </div>
+                                <div class="flex items-start gap-1">
+                                    <span class="text-emerald-400 mt-0.5">•</span>
+                                    <span class="leading-tight">Data terolah optimal</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Simulated Potential Benefits Metrics (No absolute claims) -->
+                <div class="space-y-2">
+                    <h4 class="font-bold text-slate-800 text-[10px] uppercase tracking-wider">Hasil Simulasi Dampak Implementasi AI</h4>
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="bg-white p-3 border border-slate-100 rounded-2xl shadow-sm">
+                            <p class="text-lg font-black text-emerald-600">70%</p>
+                            <p class="text-[7px] text-slate-400 font-bold uppercase mt-1">Potensi Reduksi Risiko Stockout</p>
+                        </div>
+                        <div class="bg-white p-3 border border-slate-100 rounded-2xl shadow-sm">
+                            <p class="text-lg font-black text-emerald-600">50%</p>
+                            <p class="text-[7px] text-slate-400 font-bold uppercase mt-1">Potensi Efisiensi Proses Restock</p>
+                        </div>
+                        <div class="bg-white p-3 border border-slate-100 rounded-2xl shadow-sm">
+                            <p class="text-lg font-black text-emerald-600">85%</p>
+                            <p class="text-[7px] text-slate-400 font-bold uppercase mt-1">Target Akurasi Prediksi Sistem</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dynamic & Consistent Bestseller Products Section -->
+                <div class="bg-white border border-slate-100 rounded-3xl p-4 shadow-sm">
+                    <h4 class="font-bold text-[10px] text-slate-800 mb-3 flex items-center gap-1.5 uppercase tracking-wider">
+                        <i data-lucide="award" class="w-4 h-4 text-emerald-600"></i>
+                        Simulasi Penjualan Mingguan
+                    </h4>
+                    <div class="space-y-2">
+                        <template x-for="(prod, index) in getSortedProducts()" :key="prod.name">
+                            <div class="flex items-center justify-between p-2.5 rounded-2xl border transition-all"
+                                 :class="prod.isKeyStudy ? 'bg-amber-50/60 border-amber-200 ring-1 ring-amber-300' : 'bg-slate-50/50 border-slate-100'">
+                                <div class="flex flex-col">
+                                    <span class="text-[11px] font-bold text-slate-700" x-text="(index + 1) + '. ' + prod.emoji + ' ' + prod.name"></span>
+                                    <span x-show="prod.isKeyStudy" class="text-[7.5px] font-black text-amber-700 uppercase mt-0.5 tracking-wider">Fokus Utama Studi Kasus</span>
+                                </div>
+                                <span class="text-[9px] px-2 py-0.5 rounded-full font-bold"
+                                      :class="prod.isKeyStudy ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'"
+                                      x-text="prod.total + ' ' + prod.unit"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Highly Technical Simulation Disclaimer -->
+                <div class="bg-amber-50/40 border border-amber-100 p-3 rounded-2xl">
+                    <p class="text-[8px] text-amber-800 leading-normal text-center font-medium italic">
+                        <strong>Metodologi & Parameter Simulasi:</strong> Proyeksi metrik efisiensi operasional di atas dihasilkan melalui pemodelan skenario berbasis data historis Warung Rika guna memvalidasi efektivitas pengambilan keputusan terkomputerisasi pada sistem E-SCM.
+                    </p>
+                </div>
+            </section>
+        </main>
+
+        <!-- Bottom Tab Navigation -->
+        <nav class="bg-white border-t border-slate-100 px-3 py-3 flex justify-around items-center">
+            <button @click="tab = 'dashboard'" :class="tab === 'dashboard' ? 'text-emerald-600 scale-105' : 'text-slate-400 hover:text-slate-500'" class="flex flex-col items-center gap-0.5 interactive-tab">
+                <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+                <span class="text-[8px] font-bold">Dashboard</span>
+            </button>
+            <button @click="tab = 'forecasting'" :class="tab === 'forecasting' ? 'text-emerald-600 scale-105' : 'text-slate-400 hover:text-slate-500'" class="flex flex-col items-center gap-0.5 interactive-tab">
+                <i data-lucide="line-chart" class="w-5 h-5"></i>
+                <span class="text-[8px] font-bold">Forecasting</span>
+            </button>
+            <button @click="tab = 'restock'" :class="tab === 'restock' ? 'text-emerald-600 scale-105' : 'text-slate-400 hover:text-slate-500'" class="flex flex-col items-center gap-0.5 interactive-tab">
+                <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+                <span class="text-[8px] font-bold">Restock</span>
+            </button>
+            <button @click="tab = 'impact'" :class="tab === 'impact' ? 'text-emerald-600 scale-105' : 'text-slate-400 hover:text-slate-500'" class="flex flex-col items-center gap-0.5 interactive-tab">
+                <i data-lucide="gauge" class="w-5 h-5"></i>
+                <span class="text-[8px] font-bold">Impact</span>
+            </button>
+        </nav>
+    </div>
+
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>
